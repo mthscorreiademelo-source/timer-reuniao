@@ -371,7 +371,7 @@
         Gerar ata no Gemini
       </button>
       <div class="no-transcript-note" id="noTranscriptNote" style="display:none">
-        Transcrição não ativada.<br>Ative o microfone antes de iniciar para capturar a reunião.
+        Nenhuma fala capturada.<br>O microfone foi autorizado mas não detectou voz — verifique se estava próximo o suficiente.
       </div>
       <button class="ov-btn ghost" id="btnRestart">Nova Reunião</button>
     </div>
@@ -449,6 +449,7 @@
 
   /* ─── TRANSCRIPTION ─── */
   let micEnabled   = false;
+  let micStream    = null;   // mantém a stream ativa para o Android
   let recognition  = null;
   let transcriptLines = [];   // { time, text }
   let interimText  = '';
@@ -496,12 +497,12 @@
     };
 
     recognition.onerror = (e) => {
-      if (e.error === 'not-allowed') {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         micEnabled = false;
         updateMicUI();
-        alert('Permissão de microfone negada.\n\nNo Chrome: toque no cadeado na barra de endereço → Permissões → Microfone → Permitir. Depois recarregue.');
+        alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
       }
-      // outros erros (no-speech etc) — não desativa, apenas aguarda o onend reiniciar
+      // 'no-speech', 'audio-capture', 'network' — não desativa, onend vai reiniciar
     };
 
     recognition.onend = () => {
@@ -523,6 +524,7 @@
     micEnabled = false;
     updateMicUI();
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
+    if (micStream)    { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
     transcriptStrip.classList.remove('visible');
   }
 
@@ -542,7 +544,7 @@
 
   function showOverlayWithTranscript(elapsed) {
     const hasLines = transcriptLines.length > 0;
-    const wasMicOn = micEnabled || hasLines;
+    const wasMicOn = micEnabled || micStream || hasLines;
 
     if (hasLines) {
       const preview = transcriptLines.slice(-6).map(l=>`[${l.time}] ${l.text}`).join('\n');
@@ -556,7 +558,7 @@
       transcriptBox.classList.remove('has-content');
       btnDownload.style.display = 'none';
       btnGemini.style.display   = 'none';
-      noTranscriptNote.style.display = wasMicOn ? 'none' : 'block';
+      noTranscriptNote.style.display = 'block';
     }
 
     finishedOverlay.classList.add('show');
@@ -741,24 +743,39 @@ Seja objetivo, formal e organize as informações de forma clara.`;
     if (running) {
       clearInterval(interval); running=false;
       setStatus('paused'); setPaused();
-      pauseRecognition(); // pausa mic mas mantém micEnabled
+      pauseRecognition();
     } else {
       if (!hasStarted) {
         playRingBell(); hasStarted=true;
-        // ativa mic automaticamente na primeira largada
-        if (hasSpeech && !micEnabled) { micEnabled=true; updateMicUI(); }
+        if (hasSpeech) {
+          navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+              // Mantém a stream ativa — necessário para o SpeechRecognition funcionar no Android
+              micStream = stream;
+              micEnabled = true;
+              updateMicUI();
+              // Pequeno delay para o Android inicializar o hardware de áudio
+              setTimeout(() => startRecognition(), 300);
+            })
+            .catch(err => {
+              micEnabled = false;
+              updateMicUI();
+              alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
+            });
+        }
+      } else {
+        startRecognition();
       }
       interval=setInterval(tick,1000); running=true;
       setStatus('running'); setPlaying();
       editHint.style.opacity='0';
-      startRecognition();
     }
   });
 
   function fullReset() {
     clearInterval(interval); running=false; hasStarted=false;
     remaining=totalSeconds;
-    firedAlerts.clear(); transcriptLines=[]; interimText='';
+    firedAlerts.clear(); transcriptLines=[]; interimText=''; micStream=null;
     stopRecognition();
     renderTime(); setStatus('idle'); setPaused();
     finishedOverlay.classList.remove('show');
