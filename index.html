@@ -527,54 +527,51 @@
   });
 
   /* ─── SOUND WAVES ─── */
-  let audioCtx    = null;
-  let analyser    = null;
   let waveBars    = Array.from({length:7}, (_,i) => document.getElementById('wb'+(i+1)));
   let waveAnim    = null;
   const soundWaves = document.getElementById('soundWaves');
 
-  function startWaves(stream) {
-    try {
-      audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
-      analyser  = audioCtx.createAnalyser();
-      analyser.fftSize = 64;
-      analyser.smoothingTimeConstant = 0.7;
-      const src = audioCtx.createMediaStreamSource(stream);
-      src.connect(analyser);
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      soundWaves.classList.add('active');
+  // Wave animation driven by SpeechRecognition events (no analyser needed)
+  const idleHeights  = [4, 6, 8, 10, 8, 6, 4];
+  const activeHeights= [5, 10, 16, 20, 16, 10, 5];
+  let waveMode = 'idle'; // 'idle' | 'active'
 
-      const heights = [0.4, 0.7, 0.9, 1.0, 0.9, 0.7, 0.4]; // envelope shape
+  function startIdleWave() {
+    waveMode = 'idle';
+    if (waveAnim) { cancelAnimationFrame(waveAnim); waveAnim = null; }
+    let t = 0;
+    function draw() {
+      waveAnim = requestAnimationFrame(draw);
+      t += 0.05;
+      waveBars.forEach((bar, i) => {
+        const h = idleHeights[i] + Math.sin(t + i * 0.7) * 2;
+        bar.style.height = h.toFixed(1) + 'px';
+        bar.style.background = 'rgba(0,229,176,0.4)';
+      });
+    }
+    draw();
+  }
 
-      function draw() {
-        waveAnim = requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(data);
-        // média das primeiras bandas (voz humana)
-        let sum = 0;
-        for (let i = 1; i < 12; i++) sum += data[i];
-        const avg = sum / 11;
-        const norm = Math.min(avg / 100, 1); // 0-1
-
-        waveBars.forEach((bar, i) => {
-          const minH = 3;
-          const maxH = 18;
-          // cada barra tem altura proporcional ao volume * envelope
-          const h = norm > 0.04
-            ? minH + (maxH - minH) * norm * heights[i] * (0.6 + 0.4 * Math.random())
-            : minH;
-          bar.style.height = h.toFixed(1) + 'px';
-          bar.style.background = norm > 0.5 ? '#ffb740' : norm > 0.25 ? '#00e5b0' : 'rgba(0,229,176,0.5)';
-        });
-      }
-      draw();
-    } catch(e) {}
+  function startActiveWave() {
+    waveMode = 'active';
+    if (waveAnim) { cancelAnimationFrame(waveAnim); waveAnim = null; }
+    let t = 0;
+    function draw() {
+      waveAnim = requestAnimationFrame(draw);
+      t += 0.15;
+      waveBars.forEach((bar, i) => {
+        const h = activeHeights[i] + Math.sin(t + i * 0.5) * (activeHeights[i] * 0.4);
+        bar.style.height = h.toFixed(1) + 'px';
+        bar.style.background = '#00e5b0';
+      });
+    }
+    draw();
   }
 
   function stopWaves() {
     if (waveAnim) { cancelAnimationFrame(waveAnim); waveAnim = null; }
-    if (audioCtx) { try { audioCtx.close(); } catch(e){} audioCtx = null; analyser = null; }
     soundWaves.classList.remove('active');
-    waveBars.forEach(b => b.style.height = '4px');
+    waveBars.forEach(b => { b.style.height = '4px'; b.style.background = 'rgba(0,229,176,0.4)'; });
   }
 
   /* ─── TRANSCRIPTION ─── */
@@ -626,7 +623,7 @@
     micLabel.textContent = micEnabled ? 'Mic ligado' : 'Mic desligado';
   }
 
-  let recErrorCount = 0;
+  let recRestartTimer = null;
 
   function startRecognition() {
     if (!hasSpeech || !micEnabled || recognition) return;
@@ -637,12 +634,23 @@
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      recErrorCount = 0;
       dbg('recognition iniciado ✓', 'ok');
+      soundWaves.classList.add('active');
+      startIdleWave();
     };
 
+    recognition.onsoundstart = () => {
+      dbg('som detectado!', 'ok');
+      startActiveWave();
+    };
+    recognition.onspeechstart = () => {
+      dbg('fala detectada!', 'ok');
+      startActiveWave();
+    };
+    recognition.onsoundend = () => startIdleWave();
+    recognition.onspeechend = () => startIdleWave();
+
     recognition.onresult = (e) => {
-      recErrorCount = 0;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
@@ -663,32 +671,23 @@
 
     recognition.onerror = (e) => {
       dbg('ERRO: ' + e.error, 'err');
-      recErrorCount++;
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        // Chrome negou após reload — precisa re-solicitar getUserMedia
-        micEnabled = false;
-        updateMicUI();
-        stopWaves();
-        dbg('permissão perdida — pare e aperte play novamente', 'err');
-        // Mostra instrução na tela em vez de alert
-        transcriptLive.textContent = '⚠ Permissão do mic perdida. Pause e aperte Play novamente.';
+        micEnabled = false; updateMicUI(); stopWaves();
+        transcriptLive.textContent = '⚠ Mic bloqueado. Pause e aperte Play novamente.';
         transcriptStrip.classList.add('visible');
       }
-      // 'no-speech': normal, onend vai reiniciar
-      // 'audio-capture', 'network': tenta de novo limitado
+      // no-speech / audio-capture: onend vai reiniciar
     };
 
     recognition.onend = () => {
       recognition = null;
-      dbg('recognition encerrado (erros: ' + recErrorCount + ')', recErrorCount > 3 ? 'err' : 'warn');
-      if (micEnabled && recErrorCount < 5) {
-        // reinicia com delay crescente para evitar loop infinito
-        const delay = recErrorCount > 0 ? 1000 * recErrorCount : 200;
-        setTimeout(() => startRecognition(), delay);
-      } else if (recErrorCount >= 5) {
-        dbg('muitos erros — reinicie o microfone manualmente', 'err');
-        micEnabled = false;
-        updateMicUI();
+      dbg('encerrado — reiniciando em 100ms...', 'warn');
+      if (micEnabled) {
+        clearTimeout(recRestartTimer);
+        recRestartTimer = setTimeout(() => startRecognition(), 100);
+      } else {
+        soundWaves.classList.remove('active');
+        stopWaves();
       }
     };
 
@@ -697,6 +696,7 @@
   }
 
   function pauseRecognition() {
+    clearTimeout(recRestartTimer);
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
   }
 
@@ -706,7 +706,6 @@
     updateMicUI();
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
     if (micStream)    { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
-    stopWaves();
     transcriptStrip.classList.remove('visible');
   }
 
@@ -950,13 +949,14 @@ Seja objetivo, formal e organize as informações de forma clara.`;
           navigator.mediaDevices.getUserMedia({ audio: true })
             .then(stream => {
               // Mantém a stream ativa — necessário para o SpeechRecognition funcionar no Android
-              micStream = stream;
+              // Fecha a stream imediatamente — só precisávamos confirmar a permissão
+              // Manter aberta conflita com o SpeechRecognition no Android
+              stream.getTracks().forEach(t => t.stop());
+              micStream = null;
               micEnabled = true;
               updateMicUI();
-              startWaves(stream);
-              dbg('getUserMedia OK — stream ativa', 'ok');
-              dbg('aguardando 300ms para iniciar recognition...');
-              setTimeout(() => { dbg('iniciando SpeechRecognition...'); startRecognition(); }, 300);
+              dbg('permissão OK — iniciando SpeechRecognition...', 'ok');
+              setTimeout(() => startRecognition(), 200);
             })
             .catch(err => {
               micEnabled = false;
