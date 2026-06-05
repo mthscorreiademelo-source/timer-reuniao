@@ -427,6 +427,7 @@
         Nenhuma fala capturada.<br>O microfone foi autorizado mas não detectou voz — verifique se estava próximo o suficiente.
       </div>
       <button class="ov-btn ghost" id="btnRestart">Nova Reunião</button>
+      <button class="ov-btn ghost" id="btnContinue" style="display:none; border-color:rgba(0,229,176,0.3); color:var(--accent)">↩ Continuar gravando</button>
     </div>
   </div>
 </div>
@@ -723,9 +724,10 @@
     return header + transcriptLines.map(l => `[${l.time}] ${l.text}`).join('\n') + '\n';
   }
 
-  function showOverlayWithTranscript(elapsed) {
+  const btnContinue = document.getElementById('btnContinue');
+
+  function showOverlayWithTranscript(elapsed, timerZero) {
     const hasLines = transcriptLines.length > 0;
-    const wasMicOn = micEnabled || micStream || hasLines;
 
     if (hasLines) {
       const preview = transcriptLines.slice(-6).map(l=>`[${l.time}] ${l.text}`).join('\n');
@@ -740,6 +742,26 @@
       btnDownload.style.display = 'none';
       btnGemini.style.display   = 'none';
       noTranscriptNote.style.display = 'block';
+    }
+
+    if (timerZero && micEnabled) {
+      // Timer zerou mas mic ainda está ativo — mostra opção de continuar gravando
+      btnContinue.style.display = 'flex';
+      btnRestart.style.display  = 'none';
+      // Atualiza título para indicar que ainda está gravando
+      document.querySelector('.finished-title').textContent = 'Tempo Esgotado';
+      document.querySelector('.finished-title').style.color = 'var(--warning)';
+      document.querySelector('.finished-icon').style.background = 'rgba(255,183,64,0.15)';
+      document.querySelector('.finished-icon').style.borderColor = 'rgba(255,183,64,0.4)';
+      document.querySelector('.finished-icon svg').style.stroke = 'var(--warning)';
+    } else {
+      btnContinue.style.display = 'none';
+      btnRestart.style.display  = 'flex';
+      document.querySelector('.finished-title').textContent = 'Reunião Encerrada';
+      document.querySelector('.finished-title').style.color = 'var(--danger)';
+      document.querySelector('.finished-icon').style.background = 'rgba(255,79,110,0.15)';
+      document.querySelector('.finished-icon').style.borderColor = 'rgba(255,79,110,0.4)';
+      document.querySelector('.finished-icon svg').style.stroke = 'var(--danger)';
     }
 
     finishedOverlay.classList.add('show');
@@ -777,20 +799,40 @@
   /* OPEN GEMINI */
   btnGemini.addEventListener('click', () => {
     const name = document.getElementById('meetingName').value || 'esta reunião';
-    const prompt = `Você é um assistente especializado em elaborar atas de reunião. Abaixo está a transcrição de "${name}". Por favor, elabore uma ata profissional em português com as seguintes seções:
+    const txt  = buildTranscriptText();
+    const prompt = `Você é um assistente especializado em elaborar atas de reunião. Abaixo está a transcrição de "${name}". Elabore uma ata profissional em português com as seguintes seções:
 
 1. RESUMO EXECUTIVO — breve descrição dos principais assuntos abordados
 2. DECISÕES TOMADAS — liste cada decisão de forma clara e objetiva
 3. PRÓXIMOS PASSOS — ações definidas, com responsável (se mencionado) e prazo (se mencionado)
 
-Transcrição:
-[Cole aqui o arquivo .txt que você acabou de baixar]
+Seja objetivo e formal.
 
-Seja objetivo, formal e organize as informações de forma clara.`;
+TRANSCRIÇÃO:
+${txt}`;
 
-    const encoded = encodeURIComponent(prompt);
-    window.open(`https://gemini.google.com/app?q=${encoded}`, '_blank');
+    // Copia o prompt para a área de transferência e abre o Gemini
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(prompt).then(() => {
+        btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> Prompt copiado! Abrindo Gemini...`;
+        setTimeout(() => {
+          window.open('https://gemini.google.com/app', '_blank');
+          btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> Gerar ata no Gemini`;
+        }, 2000);
+      }).catch(() => fallbackGemini(prompt));
+    } else {
+      fallbackGemini(prompt);
+    }
   });
+
+  function fallbackGemini(prompt) {
+    // Fallback: mostra o prompt em tela para copiar manualmente
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prompt para Gemini</title><style>body{background:#0f1117;color:#e8eaf0;font-family:sans-serif;padding:16px}h2{color:#00e5b0;font-size:16px;margin-bottom:12px}pre{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;background:#181c26;border-radius:8px;padding:12px;border:1px solid rgba(255,255,255,0.08)}.copy-btn{display:block;width:100%;padding:12px;background:rgba(0,229,176,0.15);border:1px solid #00e5b0;color:#00e5b0;border-radius:8px;font-size:15px;cursor:pointer;margin-bottom:12px}</style></head><body><h2>Cole este prompt no Gemini:</h2><button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pt').textContent).then(()=>{this.textContent='✓ Copiado!'})">Copiar prompt</button><pre id="pt">${prompt.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`);
+      w.document.close();
+    }
+  }
 
   /* ─── AUDIO ─── */
   const firedAlerts = new Set();
@@ -882,7 +924,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
       if ('vibrate' in navigator) navigator.vibrate([200,100,200,100,400]);
       setStatus('ended');
       finishedSub.textContent='Duração: '+fmt(totalSeconds);
-      showOverlayWithTranscript(totalSeconds);
+      showOverlayWithTranscript(totalSeconds, true);
       return;
     }
     remaining--;
@@ -1000,9 +1042,16 @@ Seja objetivo, formal e organize as informações de forma clara.`;
     showOverlayWithTranscript(elapsed);
   });
 
-  document.getElementById('btnRestart').addEventListener('click', ()=>{
+  const btnRestart = document.getElementById('btnRestart');
+
+  btnRestart.addEventListener('click', ()=>{
     finishedOverlay.classList.remove('show');
     fullReset();
+  });
+
+  btnContinue.addEventListener('click', ()=>{
+    // Fecha o overlay e deixa a transcrição continuar rodando
+    finishedOverlay.classList.remove('show');
   });
 
   renderTime();
