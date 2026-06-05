@@ -456,14 +456,19 @@
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const hasSpeech = !!SpeechRecognition;
 
+  // mic toggle = liga/desliga manualmente; a transcrição começa automática no play
   micToggle.addEventListener('click', () => {
-    if (!hasSpeech) { alert('Seu navegador não suporta reconhecimento de voz.\nUse o Chrome para esta funcionalidade.'); return; }
+    if (!hasSpeech) { alert('Reconhecimento de voz não suportado.\nUse o Chrome no Android.'); return; }
     micEnabled = !micEnabled;
-    micToggle.classList.toggle('active', micEnabled);
-    micLabel.textContent = micEnabled ? 'Transcrevendo' : 'Transcrição';
-    if (!micEnabled) stopRecognition();
+    updateMicUI();
+    if (!micEnabled) pauseRecognition();
     else if (running) startRecognition();
   });
+
+  function updateMicUI() {
+    micToggle.classList.toggle('active', micEnabled);
+    micLabel.textContent = micEnabled ? 'Mic ligado' : 'Mic desligado';
+  }
 
   function startRecognition() {
     if (!hasSpeech || !micEnabled || recognition) return;
@@ -493,22 +498,30 @@
     recognition.onerror = (e) => {
       if (e.error === 'not-allowed') {
         micEnabled = false;
-        micToggle.classList.remove('active');
-        micLabel.textContent = 'Transcrição';
-        alert('Permissão de microfone negada.');
+        updateMicUI();
+        alert('Permissão de microfone negada.\n\nNo Chrome: toque no cadeado na barra de endereço → Permissões → Microfone → Permitir. Depois recarregue.');
       }
+      // outros erros (no-speech etc) — não desativa, apenas aguarda o onend reiniciar
     };
 
     recognition.onend = () => {
       recognition = null;
-      // auto-restart while meeting is running and mic is on
-      if (running && micEnabled) startRecognition();
+      // reinicia sempre que mic estiver ligado, independente do timer ter zerado
+      if (micEnabled) startRecognition();
     };
 
     recognition.start();
   }
 
+  function pauseRecognition() {
+    // pausa sem desativar micEnabled — usado ao pausar o timer manualmente
+    if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
+  }
+
   function stopRecognition() {
+    // para tudo e reseta o estado do mic — só chamado no reset/nova reunião
+    micEnabled = false;
+    updateMicUI();
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
     transcriptStrip.classList.remove('visible');
   }
@@ -665,7 +678,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
     if (remaining<=0) {
       clearInterval(interval); running=false;
       remaining=0; renderTime();
-      stopRecognition();
+      // NÃO para o microfone — transcrição continua até encerrar manualmente
       playBell();
       if ('vibrate' in navigator) navigator.vibrate([200,100,200,100,400]);
       setStatus('ended');
@@ -728,13 +741,17 @@ Seja objetivo, formal e organize as informações de forma clara.`;
     if (running) {
       clearInterval(interval); running=false;
       setStatus('paused'); setPaused();
-      if (micEnabled) stopRecognition();
+      pauseRecognition(); // pausa mic mas mantém micEnabled
     } else {
-      if (!hasStarted) { playRingBell(); hasStarted=true; }
+      if (!hasStarted) {
+        playRingBell(); hasStarted=true;
+        // ativa mic automaticamente na primeira largada
+        if (hasSpeech && !micEnabled) { micEnabled=true; updateMicUI(); }
+      }
       interval=setInterval(tick,1000); running=true;
       setStatus('running'); setPlaying();
       editHint.style.opacity='0';
-      if (micEnabled) startRecognition();
+      startRecognition();
     }
   });
 
@@ -752,9 +769,9 @@ Seja objetivo, formal e organize as informações de forma clara.`;
   document.getElementById('btnReset').addEventListener('click', fullReset);
 
   document.getElementById('btnEnd').addEventListener('click', ()=>{
-    if (!running && remaining===totalSeconds) return;
+    if (!running && remaining===totalSeconds && !micEnabled) return;
     clearInterval(interval); running=false;
-    stopRecognition();
+    stopRecognition(); // encerramento manual = para tudo
     const elapsed=totalSeconds-remaining;
     setStatus('ended');
     finishedSub.textContent=elapsed>0?'Duração: '+fmt(elapsed):'Nenhum tempo registrado';
