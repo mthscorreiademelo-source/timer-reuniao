@@ -626,6 +626,8 @@
     micLabel.textContent = micEnabled ? 'Mic ligado' : 'Mic desligado';
   }
 
+  let recErrorCount = 0;
+
   function startRecognition() {
     if (!hasSpeech || !micEnabled || recognition) return;
     recognition = new SpeechRecognition();
@@ -634,20 +636,24 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => dbg('recognition iniciado', 'ok');
+    recognition.onstart = () => {
+      recErrorCount = 0;
+      dbg('recognition iniciado ✓', 'ok');
+    };
 
     recognition.onresult = (e) => {
+      recErrorCount = 0;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
           const trimmed = t.trim();
-          dbg('FINAL: ' + trimmed.slice(0,40), 'ok');
+          dbg('FINAL: ' + trimmed.slice(0,50), 'ok');
           if (trimmed) transcriptLines.push({ time: nowStr(), text: trimmed });
           interim = '';
         } else {
           interim += t;
-          dbg('interim: ' + t.slice(0,30), 'warn');
+          dbg('interim: ' + t.slice(0,40), 'warn');
         }
       }
       interimText = interim;
@@ -657,25 +663,40 @@
 
     recognition.onerror = (e) => {
       dbg('ERRO: ' + e.error, 'err');
+      recErrorCount++;
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        // Chrome negou após reload — precisa re-solicitar getUserMedia
         micEnabled = false;
         updateMicUI();
-        alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
+        stopWaves();
+        dbg('permissão perdida — pare e aperte play novamente', 'err');
+        // Mostra instrução na tela em vez de alert
+        transcriptLive.textContent = '⚠ Permissão do mic perdida. Pause e aperte Play novamente.';
+        transcriptStrip.classList.add('visible');
       }
+      // 'no-speech': normal, onend vai reiniciar
+      // 'audio-capture', 'network': tenta de novo limitado
     };
 
     recognition.onend = () => {
-      dbg('recognition encerrado — reiniciando...', 'warn');
       recognition = null;
-      if (micEnabled) startRecognition();
+      dbg('recognition encerrado (erros: ' + recErrorCount + ')', recErrorCount > 3 ? 'err' : 'warn');
+      if (micEnabled && recErrorCount < 5) {
+        // reinicia com delay crescente para evitar loop infinito
+        const delay = recErrorCount > 0 ? 1000 * recErrorCount : 200;
+        setTimeout(() => startRecognition(), delay);
+      } else if (recErrorCount >= 5) {
+        dbg('muitos erros — reinicie o microfone manualmente', 'err');
+        micEnabled = false;
+        updateMicUI();
+      }
     };
 
-    dbg('chamando recognition.start()...');
+    dbg('iniciando recognition...');
     recognition.start();
   }
 
   function pauseRecognition() {
-    // pausa sem desativar micEnabled — usado ao pausar o timer manualmente
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
   }
 
@@ -730,12 +751,28 @@
     const txt  = buildTranscriptText();
     const name = (document.getElementById('meetingName').value || 'reuniao').replace(/\s+/g,'-').toLowerCase();
     const date = new Date().toISOString().slice(0,10);
-    const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `transcricao-${name}-${date}.txt`;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
+    const filename = 'transcricao-' + name + '-' + date + '.txt';
+
+    try {
+      // Método 1: Blob URL com atributo download (funciona no Android Chrome)
+      const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    } catch(e) {
+      // Método 2: fallback — abre o texto em nova aba para o usuário salvar manualmente
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write('<pre style="font-family:monospace;white-space:pre-wrap;padding:16px">' + txt.replace(/</g,'&lt;') + '</pre>');
+        w.document.title = filename;
+        w.document.close();
+      }
+    }
   });
 
   /* OPEN GEMINI */
