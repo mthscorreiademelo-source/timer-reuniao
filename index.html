@@ -426,6 +426,10 @@
       <div class="no-transcript-note" id="noTranscriptNote" style="display:none">
         Nenhuma fala capturada.<br>O microfone foi autorizado mas não detectou voz — verifique se estava próximo o suficiente.
       </div>
+      <a class="ov-btn gemini" id="geminiDirectLink" href="https://gemini.google.com/app" target="_blank" rel="noopener" style="display:none; text-decoration:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Abrir Gemini e colar
+      </a>
       <button class="ov-btn ghost" id="btnRestart">Nova Reunião</button>
       <button class="ov-btn ghost" id="btnContinue" style="display:none; border-color:rgba(0,229,176,0.3); color:var(--accent)">↩ Continuar gravando</button>
     </div>
@@ -811,14 +815,13 @@ Seja objetivo e formal.
 TRANSCRIÇÃO:
 ${txt}`;
 
-    // Copia o prompt para a área de transferência e abre o Gemini
+    // Cria link real para o Gemini — mais confiável que window.open no Android
+    const geminiLink = document.getElementById('geminiDirectLink');
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(prompt).then(() => {
-        btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> Prompt copiado! Abrindo Gemini...`;
-        setTimeout(() => {
-          window.open('https://gemini.google.com/app', '_blank');
-          btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> Gerar ata no Gemini`;
-        }, 2000);
+        btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> Copiado! Toque aqui para abrir`;
+        geminiLink.style.display = 'flex';
       }).catch(() => fallbackGemini(prompt));
     } else {
       fallbackGemini(prompt);
@@ -1022,6 +1025,8 @@ ${txt}`;
     firedAlerts.clear(); transcriptLines=[]; interimText=''; micStream=null;
     stopRecognition();
     releaseWakeLock();
+    document.getElementById('geminiDirectLink').style.display = 'none';
+    btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg> Gerar ata no Gemini`;
     renderTime(); setStatus('idle'); setPaused();
     finishedOverlay.classList.remove('show');
     editHint.style.opacity='0.6';
