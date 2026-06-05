@@ -265,6 +265,74 @@
 
   .no-transcript-note { font-size: 11px; color: var(--muted); text-align: center; opacity: 0.7; }
 
+  /* MEETING TYPE SELECTOR */
+  .type-overlay {
+    position: absolute; inset: 0;
+    background: rgba(15,17,23,0.97);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 50; padding: 24px;
+    gap: 0;
+  }
+  .type-overlay.hidden { display: none; }
+
+  .type-logo {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 22px; font-weight: 700;
+    letter-spacing: 0.1em; color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .type-sub {
+    font-size: 12px; color: var(--muted);
+    letter-spacing: 0.08em; margin-bottom: 28px;
+  }
+  .type-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+  .type-card {
+    width: 100%; padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--surface);
+    cursor: pointer; transition: all 0.15s ease;
+    text-align: left; display: flex; align-items: center; gap: 14px;
+  }
+  .type-card:active { transform: scale(0.97); }
+  .type-card.selected {
+    border-color: var(--accent);
+    background: rgba(0,229,176,0.08);
+  }
+  .type-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 18px;
+  }
+  .type-icon.std    { background: rgba(0,229,176,0.12); }
+  .type-icon.daily  { background: rgba(66,133,244,0.12); }
+  .type-icon.plan   { background: rgba(255,183,64,0.12); }
+  .type-icon.review { background: rgba(255,79,110,0.12); }
+
+  .type-info { flex: 1; }
+  .type-name { font-size: 14px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+  .type-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .type-duration {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px; font-weight: 600;
+    color: var(--muted); flex-shrink: 0;
+  }
+
+  .type-start-btn {
+    width: 100%; margin-top: 20px;
+    padding: 15px; border-radius: 14px;
+    border: 1px solid var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 17px; font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .type-start-btn:active { transform: scale(0.97); }
+
   /* RECOVERY BANNER */
   .recovery-banner {
     position: absolute; top: 0; left: 0; right: 0;
@@ -330,6 +398,52 @@
 </head>
 <body>
 <div class="app" id="app">
+  <!-- MEETING TYPE SELECTOR -->
+  <div class="type-overlay" id="typeOverlay">
+    <div class="type-logo">MEETING TIMER</div>
+    <div class="type-sub">Selecione o tipo de reunião</div>
+    <div class="type-list">
+
+      <div class="type-card selected" data-type="standard" data-minutes="15">
+        <div class="type-icon std">🗂️</div>
+        <div class="type-info">
+          <div class="type-name">Reunião Padrão</div>
+          <div class="type-desc">Ata com resumo, decisões e próximos passos</div>
+        </div>
+        <div class="type-duration">15min</div>
+      </div>
+
+      <div class="type-card" data-type="daily" data-minutes="15">
+        <div class="type-icon daily">⚡</div>
+        <div class="type-info">
+          <div class="type-name">Daily Scrum</div>
+          <div class="type-desc">O que foi feito, o que será feito, bloqueios</div>
+        </div>
+        <div class="type-duration">15min</div>
+      </div>
+
+      <div class="type-card" data-type="planning" data-minutes="90">
+        <div class="type-icon plan">📋</div>
+        <div class="type-info">
+          <div class="type-name">Sprint Planning</div>
+          <div class="type-desc">Backlog, datas do sprint e decisões</div>
+        </div>
+        <div class="type-duration">90min</div>
+      </div>
+
+      <div class="type-card" data-type="review" data-minutes="45">
+        <div class="type-icon review">🔍</div>
+        <div class="type-info">
+          <div class="type-name">Sprint Review</div>
+          <div class="type-desc">O que deu certo, melhorias e plano de ação</div>
+        </div>
+        <div class="type-duration">45min</div>
+      </div>
+
+    </div>
+    <button class="type-start-btn" id="btnStartType">Começar →</button>
+  </div>
+
   <div class="bg-orb"></div>
   <div class="wake-indicator" id="wakeIndicator" title="Tela ativa"></div>
 
@@ -891,33 +1005,7 @@
     }
   });
 
-  /* OPEN GEMINI */
-  btnGemini.addEventListener('click', () => {
-    const name = document.getElementById('meetingName').value || 'esta reunião';
-    const txt  = buildTranscriptText();
-    const prompt = `Você é um assistente especializado em elaborar atas de reunião. Abaixo está a transcrição de "${name}". Elabore uma ata profissional em português com as seguintes seções:
 
-1. RESUMO EXECUTIVO — breve descrição dos principais assuntos abordados
-2. DECISÕES TOMADAS — liste cada decisão de forma clara e objetiva
-3. PRÓXIMOS PASSOS — ações definidas, com responsável (se mencionado) e prazo (se mencionado)
-
-Seja objetivo e formal.
-
-TRANSCRIÇÃO:
-${txt}`;
-
-    // Cria link real para o Gemini — mais confiável que window.open no Android
-    const geminiLink = document.getElementById('geminiDirectLink');
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(prompt).then(() => {
-        btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> Prompt copiado!`;
-        geminiLink.style.display = 'flex';
-      }).catch(() => fallbackGemini(prompt));
-    } else {
-      fallbackGemini(prompt);
-    }
-  });
 
   function fallbackGemini(prompt) {
     // Fallback: mostra o prompt em tela para copiar manualmente
@@ -1152,7 +1240,137 @@ ${txt}`;
   });
 
   renderTime();
-  checkRecovery();
+
+  /* ─── MEETING TYPE SELECTOR ─── */
+  const MEETING_TYPES = {
+    standard: {
+      label: 'Reunião Padrão',
+      minutes: 15,
+      prompt: (name, txt) => `Você é um assistente especializado em elaborar atas de reunião. Abaixo está a transcrição de "${name}". Elabore uma ata profissional em português com as seguintes seções:
+
+1. RESUMO EXECUTIVO — breve descrição dos principais assuntos abordados
+2. DECISÕES TOMADAS — liste cada decisão de forma clara e objetiva
+3. PRÓXIMOS PASSOS — ações definidas, com responsável (se mencionado) e prazo (se mencionado)
+
+Seja objetivo e formal.
+
+TRANSCRIÇÃO:
+${txt}`
+    },
+    daily: {
+      label: 'Daily Scrum',
+      minutes: 15,
+      prompt: (name, txt) => `Você é um assistente especializado em metodologias ágeis. Abaixo está a transcrição da Daily Scrum de "${name}". Elabore a ata em português com as seguintes seções:
+
+1. O QUE FOI FEITO ONTEM — resumo das entregas e atividades concluídas relatadas pela equipe
+2. O QUE SERÁ FEITO HOJE — organize as tarefas do dia por participante identificado na transcrição. Para cada participante, liste suas tarefas previstas
+3. PENDÊNCIAS E BLOQUEIOS — tudo que está travado, impedindo progresso ou aguardando resolução
+
+Seja direto e objetivo. Use listas com marcadores.
+
+TRANSCRIÇÃO:
+${txt}`
+    },
+    planning: {
+      label: 'Sprint Planning',
+      minutes: 90,
+      prompt: (name, txt) => `Você é um assistente especializado em metodologias ágeis. Abaixo está a transcrição da Sprint Planning de "${name}". Elabore a ata em português com as seguintes seções:
+
+1. INFORMAÇÕES DO SPRINT
+   - Data de início:
+   - Data de fim:
+   - Meta do Sprint:
+   (extraia da transcrição, se mencionado)
+
+2. BACKLOG DO SPRINT — liste os itens, histórias de usuário ou tarefas que foram selecionados para o sprint, com responsável e estimativa se mencionados
+
+3. DECISÕES TOMADAS — decisões importantes tomadas durante o planejamento
+
+4. PONTOS DE ATENÇÃO — riscos, dependências ou preocupações levantadas
+
+Seja objetivo e estruturado.
+
+TRANSCRIÇÃO:
+${txt}`
+    },
+    review: {
+      label: 'Sprint Review',
+      minutes: 45,
+      prompt: (name, txt) => `Você é um assistente especializado em metodologias ágeis. Abaixo está a transcrição da Sprint Review de "${name}". Elabore a ata em português respondendo cada uma das seções abaixo:
+
+1. RESULTADOS — o que foi entregue neste sprint, demos realizadas e objetivos alcançados
+
+2. O QUE DEU CERTO — pontos positivos, sucessos e práticas que funcionaram bem
+
+3. O QUE PRECISA MELHORAR — dificuldades, falhas e pontos de atenção identificados
+
+4. IDEIAS DE MELHORIA / PLANO DE AÇÃO — sugestões concretas e ações propostas para o próximo ciclo, com responsável se mencionado
+
+5. ITENS DE AÇÃO — tarefas específicas definidas durante a reunião, com responsável e prazo se mencionados
+
+6. PERGUNTAS ABERTAS — questões levantadas que ainda não foram respondidas ou que precisam de acompanhamento
+
+Seja completo mas objetivo.
+
+TRANSCRIÇÃO:
+${txt}`
+    }
+  };
+
+  let currentMeetingType = 'standard';
+  const typeOverlay = document.getElementById('typeOverlay');
+  const typeCards   = document.querySelectorAll('.type-card');
+
+  typeCards.forEach(card => {
+    card.addEventListener('click', () => {
+      typeCards.forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      currentMeetingType = card.dataset.type;
+    });
+  });
+
+  document.getElementById('btnStartType').addEventListener('click', () => {
+    const selected = document.querySelector('.type-card.selected');
+    const minutes  = parseInt(selected.dataset.minutes);
+    const type     = selected.dataset.type;
+    const typeName = MEETING_TYPES[type].label;
+
+    // Set timer
+    totalSeconds = minutes * 60;
+    remaining    = totalSeconds;
+    currentMeetingType = type;
+
+    // Update meeting name placeholder
+    const nameInput = document.getElementById('meetingName');
+    if (nameInput.value === 'Sessão de Estratégia Q2' || nameInput.value === '') {
+      nameInput.value = typeName;
+    }
+
+    // Update badge
+    document.querySelector('.session-badge').textContent = typeName;
+
+    renderTime();
+    typeOverlay.classList.add('hidden');
+    checkRecovery();
+  });
+
+  // Wire up Gemini button with type-aware prompt
+  btnGemini.addEventListener('click', () => {
+    const name    = document.getElementById('meetingName').value || 'esta reunião';
+    const txt     = buildTranscriptText();
+    const typeDef = MEETING_TYPES[currentMeetingType] || MEETING_TYPES.standard;
+    const prompt  = typeDef.prompt(name, txt);
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(prompt).then(() => {
+        btnGemini.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><polyline points="20 6 9 17 4 12"/></svg> Prompt copiado!`;
+        document.getElementById('geminiDirectLink').style.display = 'flex';
+      }).catch(() => fallbackGemini(prompt));
+    } else {
+      fallbackGemini(prompt);
+    }
+  });
+
 </script>
 </body>
 </html>
