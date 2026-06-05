@@ -1168,25 +1168,26 @@
       releaseWakeLock();
     } else {
       if (!hasStarted) {
-        playRingBell(); hasStarted=true;
+        hasStarted = true;
+        // Toca o sino completo primeiro, só depois solicita o microfone
+        playRingBell();
         if (hasSpeech) {
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => {
-              // Mantém a stream ativa — necessário para o SpeechRecognition funcionar no Android
-              // Fecha a stream imediatamente — só precisávamos confirmar a permissão
-              // Manter aberta conflita com o SpeechRecognition no Android
-              stream.getTracks().forEach(t => t.stop());
-              micStream = null;
-              micEnabled = true;
-              updateMicUI();
-              dbg('permissão OK — iniciando SpeechRecognition...', 'ok');
-              setTimeout(() => startRecognition(), 200);
-            })
-            .catch(err => {
-              micEnabled = false;
-              updateMicUI();
-              alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
-            });
+          setTimeout(() => {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+              .then(stream => {
+                stream.getTracks().forEach(t => t.stop());
+                micStream = null;
+                micEnabled = true;
+                updateMicUI();
+                dbg('permissão OK — iniciando SpeechRecognition...', 'ok');
+                setTimeout(() => startRecognition(), 200);
+              })
+              .catch(err => {
+                micEnabled = false;
+                updateMicUI();
+                alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
+              });
+          }, 1800);
         }
       } else {
         startRecognition();
