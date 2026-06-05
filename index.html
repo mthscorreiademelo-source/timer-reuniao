@@ -264,11 +264,37 @@
   .ov-btn.gemini svg, .ov-btn.accent svg { width: 16px; height: 16px; flex-shrink: 0; }
 
   .no-transcript-note { font-size: 11px; color: var(--muted); text-align: center; opacity: 0.7; }
+
+  /* SOUND WAVES */
+  .sound-waves {
+    display: flex; align-items: center; justify-content: center;
+    gap: 3px; height: 20px;
+    opacity: 0; transition: opacity 0.4s;
+  }
+  .sound-waves.active { opacity: 1; }
+  .wave-bar {
+    width: 3px; border-radius: 2px;
+    background: var(--accent);
+    height: 4px;
+    transition: height 0.1s ease, background 0.3s;
+    transform-origin: center;
+  }
+
+  /* WAKE LOCK INDICATOR */
+  .wake-indicator {
+    position: absolute; top: 12px; right: 14px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); opacity: 0.4;
+    transition: background 0.3s, opacity 0.3s;
+    z-index: 5;
+  }
+  .wake-indicator.active { background: var(--accent); opacity: 0.8; }
 </style>
 </head>
 <body>
 <div class="app" id="app">
   <div class="bg-orb"></div>
+  <div class="wake-indicator" id="wakeIndicator" title="Tela ativa"></div>
 
   <div class="header">
     <div class="session-badge">Reunião</div>
@@ -285,6 +311,15 @@
         <div class="mic-dot"></div>
         <span id="micLabel">Transcrição</span>
       </div>
+    </div>
+    <div class="sound-waves" id="soundWaves">
+      <div class="wave-bar" id="wb1"></div>
+      <div class="wave-bar" id="wb2"></div>
+      <div class="wave-bar" id="wb3"></div>
+      <div class="wave-bar" id="wb4"></div>
+      <div class="wave-bar" id="wb5"></div>
+      <div class="wave-bar" id="wb6"></div>
+      <div class="wave-bar" id="wb7"></div>
     </div>
   </div>
 
@@ -447,6 +482,83 @@
     statusText.textContent = lbl[state]||state;
   }
 
+  /* ─── WAKE LOCK ─── */
+  let wakeLock = null;
+  const wakeIndicator = document.getElementById('wakeIndicator');
+
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeIndicator.classList.add('active');
+      wakeLock.addEventListener('release', () => {
+        wakeIndicator.classList.remove('active');
+        wakeLock = null;
+      });
+    } catch(e) {}
+  }
+
+  function releaseWakeLock() {
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+    wakeIndicator.classList.remove('active');
+  }
+
+  // Reaquire wake lock quando a aba volta ao foco
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && running) requestWakeLock();
+  });
+
+  /* ─── SOUND WAVES ─── */
+  let audioCtx    = null;
+  let analyser    = null;
+  let waveBars    = Array.from({length:7}, (_,i) => document.getElementById('wb'+(i+1)));
+  let waveAnim    = null;
+  const soundWaves = document.getElementById('soundWaves');
+
+  function startWaves(stream) {
+    try {
+      audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+      analyser  = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.7;
+      const src = audioCtx.createMediaStreamSource(stream);
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      soundWaves.classList.add('active');
+
+      const heights = [0.4, 0.7, 0.9, 1.0, 0.9, 0.7, 0.4]; // envelope shape
+
+      function draw() {
+        waveAnim = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(data);
+        // média das primeiras bandas (voz humana)
+        let sum = 0;
+        for (let i = 1; i < 12; i++) sum += data[i];
+        const avg = sum / 11;
+        const norm = Math.min(avg / 100, 1); // 0-1
+
+        waveBars.forEach((bar, i) => {
+          const minH = 3;
+          const maxH = 18;
+          // cada barra tem altura proporcional ao volume * envelope
+          const h = norm > 0.04
+            ? minH + (maxH - minH) * norm * heights[i] * (0.6 + 0.4 * Math.random())
+            : minH;
+          bar.style.height = h.toFixed(1) + 'px';
+          bar.style.background = norm > 0.5 ? '#ffb740' : norm > 0.25 ? '#00e5b0' : 'rgba(0,229,176,0.5)';
+        });
+      }
+      draw();
+    } catch(e) {}
+  }
+
+  function stopWaves() {
+    if (waveAnim) { cancelAnimationFrame(waveAnim); waveAnim = null; }
+    if (audioCtx) { try { audioCtx.close(); } catch(e){} audioCtx = null; analyser = null; }
+    soundWaves.classList.remove('active');
+    waveBars.forEach(b => b.style.height = '4px');
+  }
+
   /* ─── TRANSCRIPTION ─── */
   let micEnabled   = false;
   let micStream    = null;   // mantém a stream ativa para o Android
@@ -525,6 +637,7 @@
     updateMicUI();
     if (recognition) { try { recognition.stop(); } catch(e){} recognition = null; }
     if (micStream)    { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    stopWaves();
     transcriptStrip.classList.remove('visible');
   }
 
@@ -744,6 +857,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
       clearInterval(interval); running=false;
       setStatus('paused'); setPaused();
       pauseRecognition();
+      releaseWakeLock();
     } else {
       if (!hasStarted) {
         playRingBell(); hasStarted=true;
@@ -754,6 +868,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
               micStream = stream;
               micEnabled = true;
               updateMicUI();
+              startWaves(stream);
               // Pequeno delay para o Android inicializar o hardware de áudio
               setTimeout(() => startRecognition(), 300);
             })
@@ -769,6 +884,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
       interval=setInterval(tick,1000); running=true;
       setStatus('running'); setPlaying();
       editHint.style.opacity='0';
+      requestWakeLock();
     }
   });
 
@@ -777,6 +893,7 @@ Seja objetivo, formal e organize as informações de forma clara.`;
     remaining=totalSeconds;
     firedAlerts.clear(); transcriptLines=[]; interimText=''; micStream=null;
     stopRecognition();
+    releaseWakeLock();
     renderTime(); setStatus('idle'); setPaused();
     finishedOverlay.classList.remove('show');
     editHint.style.opacity='0.6';
