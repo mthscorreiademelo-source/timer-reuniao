@@ -265,6 +265,21 @@
 
   .no-transcript-note { font-size: 11px; color: var(--muted); text-align: center; opacity: 0.7; }
 
+  /* DEBUG PANEL */
+  .debug-panel {
+    position: absolute; bottom: 140px; left: 12px; right: 12px;
+    background: rgba(0,0,0,0.85); border: 1px solid rgba(0,229,176,0.3);
+    border-radius: 10px; padding: 10px 12px; z-index: 20;
+    font-size: 11px; font-family: monospace; color: #aaa;
+    max-height: 140px; overflow-y: auto;
+    display: none;
+  }
+  .debug-panel.show { display: block; }
+  .debug-line { margin-bottom: 3px; line-height: 1.4; }
+  .debug-line.ok  { color: #00e5b0; }
+  .debug-line.err { color: #ff4f6e; }
+  .debug-line.warn { color: #ffb740; }
+
   /* SOUND WAVES */
   .sound-waves {
     display: flex; align-items: center; justify-content: center;
@@ -373,6 +388,9 @@
       </div>
     </div>
   </div>
+
+  <!-- DEBUG PANEL -->
+  <div class="debug-panel" id="debugPanel"></div>
 
   <!-- FINISHED OVERLAY -->
   <div class="finished-overlay" id="finishedOverlay">
@@ -570,6 +588,31 @@
   const hasSpeech = !!SpeechRecognition;
 
   // mic toggle = liga/desliga manualmente; a transcrição começa automática no play
+  // Debug panel
+  const debugPanel = document.getElementById('debugPanel');
+  let debugVisible = false;
+  let debugLines = [];
+
+  function dbg(msg, type='') {
+    const t = new Date().toTimeString().slice(0,8);
+    debugLines.push({t, msg, type});
+    if (debugLines.length > 30) debugLines.shift();
+    debugPanel.innerHTML = debugLines.map(l =>
+      `<div class="debug-line ${l.type}">[${l.t}] ${l.msg}</div>`
+    ).join('');
+    debugPanel.scrollTop = debugPanel.scrollHeight;
+  }
+
+  // Toque longo no mic toggle abre/fecha debug
+  let micHoldTimer = null;
+  micToggle.addEventListener('touchstart', () => {
+    micHoldTimer = setTimeout(() => {
+      debugVisible = !debugVisible;
+      debugPanel.classList.toggle('show', debugVisible);
+    }, 800);
+  });
+  micToggle.addEventListener('touchend', () => clearTimeout(micHoldTimer));
+
   micToggle.addEventListener('click', () => {
     if (!hasSpeech) { alert('Reconhecimento de voz não suportado.\nUse o Chrome no Android.'); return; }
     micEnabled = !micEnabled;
@@ -591,16 +634,20 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
+    recognition.onstart = () => dbg('recognition iniciado', 'ok');
+
     recognition.onresult = (e) => {
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
           const trimmed = t.trim();
+          dbg('FINAL: ' + trimmed.slice(0,40), 'ok');
           if (trimmed) transcriptLines.push({ time: nowStr(), text: trimmed });
           interim = '';
         } else {
           interim += t;
+          dbg('interim: ' + t.slice(0,30), 'warn');
         }
       }
       interimText = interim;
@@ -609,20 +656,21 @@
     };
 
     recognition.onerror = (e) => {
+      dbg('ERRO: ' + e.error, 'err');
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
         micEnabled = false;
         updateMicUI();
         alert('Microfone bloqueado.\n\nPara liberar no Chrome:\n1. Toque no cadeado na barra de endereço\n2. Permissões → Microfone → Permitir\n3. Recarregue a página');
       }
-      // 'no-speech', 'audio-capture', 'network' — não desativa, onend vai reiniciar
     };
 
     recognition.onend = () => {
+      dbg('recognition encerrado — reiniciando...', 'warn');
       recognition = null;
-      // reinicia sempre que mic estiver ligado, independente do timer ter zerado
       if (micEnabled) startRecognition();
     };
 
+    dbg('chamando recognition.start()...');
     recognition.start();
   }
 
@@ -869,8 +917,9 @@ Seja objetivo, formal e organize as informações de forma clara.`;
               micEnabled = true;
               updateMicUI();
               startWaves(stream);
-              // Pequeno delay para o Android inicializar o hardware de áudio
-              setTimeout(() => startRecognition(), 300);
+              dbg('getUserMedia OK — stream ativa', 'ok');
+              dbg('aguardando 300ms para iniciar recognition...');
+              setTimeout(() => { dbg('iniciando SpeechRecognition...'); startRecognition(); }, 300);
             })
             .catch(err => {
               micEnabled = false;
