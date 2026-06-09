@@ -2,7 +2,8 @@
   "name": "Meeting Timer",
   "short_name": "Meeting Timer",
   "description": "Timer para reuniões com transcrição automática e geração de ata",
-  "start_url": "/index.html",
+  "start_url": "/timer-reuniao/",
+  "scope": "/timer-reuniao/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f1117",
@@ -28,6 +29,5 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["productivity", "business"],
-  "screenshots": []
+  "categories": ["productivity", "business"]
 }
