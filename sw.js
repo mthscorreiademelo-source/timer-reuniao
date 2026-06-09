@@ -1,10 +1,11 @@
-const CACHE = 'meeting-timer-v1';
+const CACHE = 'meeting-timer-v2';
 const ASSETS = [
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/icon-maskable-512.png'
+  '/timer-reuniao/',
+  '/timer-reuniao/index.html',
+  '/timer-reuniao/manifest.json',
+  '/timer-reuniao/icon-192.png',
+  '/timer-reuniao/icon-512.png',
+  '/timer-reuniao/icon-maskable-512.png'
 ];
 
 self.addEventListener('install', e => {
