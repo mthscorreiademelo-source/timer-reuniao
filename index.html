@@ -397,6 +397,19 @@
     z-index: 5;
   }
   .wake-indicator.active { background: var(--accent); opacity: 0.8; }
+
+  /* MENU BUTTON */
+  .menu-btn {
+    position: absolute; top: 8px; right: 26px;
+    width: 32px; height: 32px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 6;
+    transition: all 0.15s;
+  }
+  .menu-btn:active { transform: scale(0.9); background: rgba(0,229,176,0.1); }
+  .menu-btn svg { width: 16px; height: 16px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -449,6 +462,13 @@
 
   <div class="bg-orb"></div>
   <div class="wake-indicator" id="wakeIndicator" title="Tela ativa"></div>
+  <button class="menu-btn" id="btnMenu" title="Tipo de reunião">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6"  x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
 
   <!-- RECOVERY BANNER -->
   <div class="recovery-banner" id="recoveryBanner">
@@ -1338,29 +1358,39 @@ ${txt}`
     });
   });
 
-  document.getElementById('btnStartType').addEventListener('click', () => {
+  function applyMeetingType() {
     const selected = document.querySelector('.type-card.selected');
     const minutes  = parseInt(selected.dataset.minutes);
     const type     = selected.dataset.type;
     const typeName = MEETING_TYPES[type].label;
 
-    // Set timer
+    // Stop timer if running
+    if (running) {
+      clearInterval(interval); running = false;
+      setPaused(); setStatus('idle');
+    }
+
     totalSeconds = minutes * 60;
     remaining    = totalSeconds;
     currentMeetingType = type;
 
-    // Update meeting name placeholder
     const nameInput = document.getElementById('meetingName');
-    if (nameInput.value === 'Sessão de Estratégia Q2' || nameInput.value === '') {
+    if (!nameInput.value || nameInput.value === 'Sessão de Estratégia Q2' || Object.values(MEETING_TYPES).map(t=>t.label).includes(nameInput.value)) {
       nameInput.value = typeName;
     }
 
-    // Update badge
     document.querySelector('.session-badge').textContent = typeName;
-
     renderTime();
     typeOverlay.classList.add('hidden');
+  }
+
+  document.getElementById('btnStartType').addEventListener('click', () => {
+    applyMeetingType();
     checkRecovery();
+  });
+
+  document.getElementById('btnMenu').addEventListener('click', () => {
+    typeOverlay.classList.remove('hidden');
   });
 
   // Wire up Gemini button with type-aware prompt
