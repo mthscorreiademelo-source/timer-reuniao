@@ -858,6 +858,25 @@
 
   let recRestartTimer = null;
 
+  // Adiciona um trecho final à transcrição, evitando a duplicação do Android.
+  // O reconhecimento reemite a mesma fala crescendo palavra a palavra (cada
+  // versão marcada como "final"); aqui, se o novo texto é continuação do
+  // último trecho, substituímos a linha existente em vez de criar outra.
+  function addFinalText(text) {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+    const last = transcriptLines.length ? transcriptLines[transcriptLines.length - 1] : null;
+    if (last) {
+      const a = normalizeForCompare(last.text);
+      const b = normalizeForCompare(trimmed);
+      if (b === a) { saveTranscript(); return; }                 // idêntico → ignora
+      if (a && b.startsWith(a + ' ')) { last.text = trimmed; saveTranscript(); return; } // estende → atualiza
+      if (b && a.startsWith(b + ' ')) { saveTranscript(); return; } // versão menor/atrasada → ignora
+    }
+    transcriptLines.push({ time: nowStr(), text: trimmed });
+    saveTranscript();
+  }
+
   function startRecognition() {
     if (!hasSpeech || !micEnabled || recognition) return;
     recognition = new SpeechRecognition();
@@ -890,10 +909,7 @@
         if (e.results[i].isFinal) {
           const trimmed = t.trim();
           dbg('FINAL: ' + trimmed.slice(0,50), 'ok');
-          if (trimmed) {
-            transcriptLines.push({ time: nowStr(), text: trimmed });
-            saveTranscript();
-          }
+          addFinalText(trimmed);
           interim = '';
         } else {
           interim += t;
@@ -959,12 +975,33 @@
     return header + transcriptLines.map(l => `[${l.time}] ${l.text}`).join('\n') + '\n';
   }
 
+  // Normaliza um texto para comparação (minúsculas, sem pontuação/espaços extras).
+  function normalizeForCompare(s) {
+    return s.toLowerCase().replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
   // Versão enxuta da transcrição para enviar junto com o prompt:
   // sem horários e sem cabeçalho, com os trechos unidos em texto corrido.
-  // Reduz bastante o tamanho do texto, facilitando colar/compartilhar.
+  // Também colapsa trechos repetidos em que um é continuação do outro
+  // (bug do reconhecimento de voz do Android que reemite a fala crescendo),
+  // mantendo só a versão mais completa.
   function buildCleanTranscript() {
     if (!transcriptLines.length) return '(nenhuma fala capturada)';
-    return transcriptLines.map(l => l.text.trim()).filter(Boolean).join(' ');
+    const out = [];
+    for (const l of transcriptLines) {
+      const text = l.text.trim();
+      if (!text) continue;
+      const prev = out.length ? out[out.length - 1] : null;
+      if (prev) {
+        const a = normalizeForCompare(prev);
+        const b = normalizeForCompare(text);
+        if (b === a) continue;                       // idêntico → ignora
+        if (b.startsWith(a + ' ')) { out[out.length - 1] = text; continue; } // novo estende o anterior → substitui
+        if (a.startsWith(b + ' ')) continue;         // novo é versão menor → ignora
+      }
+      out.push(text);
+    }
+    return out.join(' ');
   }
 
   const btnContinue = document.getElementById('btnContinue');
