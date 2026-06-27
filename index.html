@@ -586,6 +586,10 @@
 
     <div class="overlay-actions">
       <!-- shown only when transcript exists -->
+      <button class="ov-btn gemini" id="btnShare" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        Enviar pro Gemini
+      </button>
       <button class="ov-btn accent" id="btnDownload" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Baixar transcrição .txt
@@ -955,6 +959,14 @@
     return header + transcriptLines.map(l => `[${l.time}] ${l.text}`).join('\n') + '\n';
   }
 
+  // Versão enxuta da transcrição para enviar junto com o prompt:
+  // sem horários e sem cabeçalho, com os trechos unidos em texto corrido.
+  // Reduz bastante o tamanho do texto, facilitando colar/compartilhar.
+  function buildCleanTranscript() {
+    if (!transcriptLines.length) return '(nenhuma fala capturada)';
+    return transcriptLines.map(l => l.text.trim()).filter(Boolean).join(' ');
+  }
+
   const btnContinue = document.getElementById('btnContinue');
 
   function showOverlayWithTranscript(elapsed, timerZero) {
@@ -965,11 +977,13 @@
       transcriptPreview.textContent = preview;
       transcriptCount.textContent   = transcriptLines.length + ' trechos';
       transcriptBox.classList.add('has-content');
+      btnShare.style.display    = (navigator.share ? 'flex' : 'none');
       btnDownload.style.display = 'flex';
       btnGemini.style.display   = 'flex';
       noTranscriptNote.style.display = 'none';
     } else {
       transcriptBox.classList.remove('has-content');
+      btnShare.style.display    = 'none';
       btnDownload.style.display = 'none';
       btnGemini.style.display   = 'none';
       noTranscriptNote.style.display = 'block';
@@ -1396,7 +1410,7 @@ ${txt}`
   // Wire up Gemini button with type-aware prompt
   btnGemini.addEventListener('click', () => {
     const name    = document.getElementById('meetingName').value || 'esta reunião';
-    const txt     = buildTranscriptText();
+    const txt     = buildCleanTranscript();
     const typeDef = MEETING_TYPES[currentMeetingType] || MEETING_TYPES.standard;
     const prompt  = typeDef.prompt(name, txt);
 
@@ -1407,6 +1421,32 @@ ${txt}`
       }).catch(() => fallbackGemini(prompt));
     } else {
       fallbackGemini(prompt);
+    }
+  });
+
+  // Enviar pro Gemini via compartilhamento nativo do Android (Web Share).
+  // Um toque abre o seletor de apps; o prompt + transcrição vão juntos como texto,
+  // sem precisar baixar arquivo nem colar manualmente.
+  const btnShare = document.getElementById('btnShare');
+  btnShare.addEventListener('click', async () => {
+    const name    = document.getElementById('meetingName').value || 'esta reunião';
+    const txt     = buildCleanTranscript();
+    const typeDef = MEETING_TYPES[currentMeetingType] || MEETING_TYPES.standard;
+    const prompt  = typeDef.prompt(name, txt);
+
+    try {
+      await navigator.share({ text: prompt });
+    } catch (err) {
+      // Usuário cancelou o seletor — não faz nada.
+      if (err && err.name === 'AbortError') return;
+      // Falha real (ex.: app sem suporte) — cai na cópia como alternativa.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(prompt)
+          .then(() => { document.getElementById('geminiDirectLink').style.display = 'flex'; })
+          .catch(() => fallbackGemini(prompt));
+      } else {
+        fallbackGemini(prompt);
+      }
     }
   });
 

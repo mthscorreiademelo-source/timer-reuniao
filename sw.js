@@ -1,4 +1,4 @@
-const CACHE = 'meeting-timer-v2';
+const CACHE = 'meeting-timer-v3';
 const ASSETS = [
   '/timer-reuniao/',
   '/timer-reuniao/index.html',
